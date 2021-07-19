@@ -931,6 +931,7 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        per_item_loss=False # True to get loss per batch item (no reduction)
     ):
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
@@ -969,8 +970,23 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
             # Shift so that tokens < n predict n
             shift_logits = lm_logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
+            for label_tensor in shift_labels:
+                in_utt = False 
+                for i in range(label_tensor.shape[0]):
+                    if label_tensor[i] == 796: # " ="
+                        in_utt = True 
+                        label_tensor[i] = -100
+                    if not in_utt:
+                        label_tensor[i] = -100
+                    if label_tensor[i] == 50256: # EOS
+                        break
+                label_tensor[i+1:] = -100 # for all the padding (+1 to include EOS)
+
             # Flatten the tokens
-            loss_fct = CrossEntropyLoss()
+            if per_item_loss:
+                loss_fct = CrossEntropyLoss(reduction="none")
+            else:
+                loss_fct = CrossEntropyLoss()
             loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
         if not return_dict:
